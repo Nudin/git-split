@@ -3,8 +3,21 @@
 set -e
 
 # TODO:
-## TRAP
 ## -p
+
+trap abort TERM INT SEGV ABRT
+
+abort() {
+   echo -e "ERROR: SOMETHING WENT WRONG."
+   if [[ "$original_hash" != "" ]]; then
+      echo -e "revert to original_hash commit"
+      git reset --hard "$original_hash"
+   fi
+   if [[ "$stash_commit" != "" ]]; then
+      git stash apply "$stash_commit"
+   fi
+   exit 3
+}
 
 if [ "$1" = "--auto-stash" ]; then
    autostash=true
@@ -75,10 +88,7 @@ git checkout -q "$original_abbrev"
 git rebase -q "$newbranch"
 
 if [ "$(git diff  "$original_hash")" != "" ]; then
-   echo -e "ERROR: SOMETHING WENT WRONG."
-   echo -e "revert to original_hash commit"
-   git reset --hard "$original_hash"
-   exit 3
+   abort
 fi
 
 if [[ "$stash_commit" != "" ]]; then
