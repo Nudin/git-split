@@ -1,14 +1,25 @@
 #!/usr/bin/env bash
 
+set -e
+
 # TODO:
 ## TRAP
-## --auto-stash
 ## -p
+
+if [ "$1" = "--auto-stash" ]; then
+   autostash=true
+   shift
+fi
 
 if [ "${#*}" != 1 ]; then
    echo "Usage:"
-   echo "git split <commit>"
+   echo "git split [--auto-stash] <commit>"
    exit 1
+fi
+
+if $autostash; then
+   stash_commit=$(git stash create)
+   git reset --hard @
 fi
 
 if [ "$(git status --porcelain --untracked-files=no | wc -l)" != 0 ]; then
@@ -68,4 +79,8 @@ if [ "$(git diff  "$original_hash")" != "" ]; then
    echo -e "revert to original_hash commit"
    git reset --hard "$original_hash"
    exit 3
+fi
+
+if [[ "$stash_commit" != "" ]]; then
+   git stash apply "$stash_commit"
 fi
