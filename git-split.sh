@@ -2,9 +2,6 @@
 
 set -e
 
-# TODO:
-## -p
-
 trap abort TERM INT SEGV ABRT
 
 abort() {
@@ -19,20 +16,29 @@ abort() {
    exit 3
 }
 
-if [[ "$1" = "--auto-stash" ]]; then
-   autostash=true
-   shift
-fi
+split_by_patch=false
+autostash=false
+for _ in 0 1; do
+   if [[ "$1" = "--auto-stash" ]]; then
+      autostash=true
+      shift
+   fi
+
+   if [[ "$1" = "-p" ]]; then
+      split_by_patch=true
+      shift
+   fi
+done
 
 if [[ "${#*}" != 1 ]]; then
    echo "Usage:"
-   echo "git split [--auto-stash] <commit>"
+   echo "git split [-p] [--auto-stash] <commit>"
    exit 1
 fi
 
 if $autostash; then
    stash_commit=$(git stash create)
-   git reset --hard @
+   git reset -q --hard @
 fi
 
 if [[ "$(git status --porcelain --untracked-files=no | wc -l)" != 0 ]]; then
@@ -52,15 +58,26 @@ echo "Split commit $target_hash ($message)"
 
 git checkout -q "$target_hash"
 
-if [[ "$(git status --porcelain --untracked-files=no | wc -l)" = 0 ]]; then
-   git reset --soft HEAD^  # removing --soft works perfectly fine?
-fi
+git reset -q --soft HEAD^
+status=$(git status --porcelain --untracked-files=no)
+git reset -q HEAD
 
-git status --porcelain --untracked-files=no | while read -r status file _ new_file
+echo -e "$status" | while read -r status file _ new_file
 do
    if [[ "$status" = "M" ]]; then
-      git add "$file"
-      git commit -n "$file" -m "$file: $message"
+      if $split_by_patch; then
+         count=1
+         while [[ "$(git status --porcelain --untracked-files=no "$file" | wc -l)" != 0 ]]; do
+            echo -e "y\nq" | git commit -n -p "$file" -m "$file: $message" > /dev/null
+            if [[  "$(git status --porcelain --untracked-files=no "$file" | wc -l)" != 0 || $count -gt 1 ]]; then
+               git commit --amend -m "$file~$count: $message"
+            fi
+            (( count++ ))
+         done
+      else
+         git add "$file"
+         git commit -n "$file" -m "$file: $message"
+      fi
    elif [[ "$status" = "A" ]]; then
       git add "$file"
       git commit -n "$file" -m "added $file: $message"
@@ -70,7 +87,6 @@ do
    elif [[ "$status" = "R" ]]; then
       git mv "$file" "$new_file"
       git commit -n "$file" -m "moved $new_file: $message"
-   # TODO: Add C
    else
       echo "unknown status $file"
       exit 3
